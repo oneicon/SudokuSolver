@@ -10,6 +10,7 @@
     td { width: 30px; height: 30px; text-align: center; border: 1px solid #ccc; font-size: 20px; }
     table { border-collapse: collapse; margin-top: 10px; }
     pre { background: #f8f8f8; border: 1px solid #ccc; padding: 10px; margin-top: 10px; white-space: pre-wrap; }
+    #log { margin-top: 10px; color: green; font-family: monospace; }
   </style>
 </head>
 <body>
@@ -20,6 +21,7 @@
   <table id="resultGrid"></table>
   <h4>CSV出力:</h4>
   <pre id="csvOutput"></pre>
+  <div id="log"></div>
 
   <script>
     const input = document.getElementById('fileInput');
@@ -28,21 +30,33 @@
     const resultTable = document.getElementById('resultGrid');
     const csvOutput = document.getElementById('csvOutput');
     const button = document.getElementById('processButton');
+    const log = document.getElementById('log');
 
     let imageFile = null;
 
+    function logMessage(message) {
+      console.log(message);
+      log.textContent += `\n${message}`;
+    }
+
     input.addEventListener('change', (e) => {
       imageFile = e.target.files[0];
+      logMessage(`ファイル読み込み: ${imageFile.name}`);
     });
 
     button.addEventListener('click', async () => {
-      if (!imageFile) return;
+      log.textContent = "画像処理を開始します...";
+      if (!imageFile) {
+        logMessage("画像ファイルが未選択です。");
+        return;
+      }
 
       const img = new Image();
       img.onload = async () => {
         canvas.width = img.width;
         canvas.height = img.height;
         ctx.drawImage(img, 0, 0);
+        logMessage("画像描画完了。");
 
         let src = cv.imread(canvas);
         let gray = new cv.Mat();
@@ -53,7 +67,10 @@
         cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
         cv.GaussianBlur(gray, gray, new cv.Size(5, 5), 0);
         cv.adaptiveThreshold(gray, thresh, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 11, 2);
+        logMessage("前処理完了（グレースケール・二値化）。");
+
         cv.findContours(thresh, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+        logMessage(`輪郭検出数: ${contours.size()}`);
 
         let maxArea = 0, maxContour = null;
         for (let i = 0; i < contours.size(); i++) {
@@ -71,6 +88,7 @@
           cv.approxPolyDP(maxContour, approx, 0.02 * peri, true);
 
           if (approx.rows === 4) {
+            logMessage("グリッド検出成功。");
             let pts = [];
             for (let i = 0; i < 4; i++) {
               pts.push({ x: approx.data32S[i * 2], y: approx.data32S[i * 2 + 1] });
@@ -93,14 +111,21 @@
                 canvasCell.width = 50;
                 canvasCell.height = 50;
                 cv.imshow(canvasCell, cell);
-                let { data: { text } } = await Tesseract.recognize(canvasCell, 'eng', {
-                  tessedit_char_whitelist: '0123456789',
-                  workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/worker.min.js',
-                  langPath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@4.0.0/lang/',
-                  corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@4.0.0/tesseract-core.wasm.js'
-                });
-                let val = parseInt(text.trim()) || 0;
-                row.push(val);
+
+                try {
+                  let { data: { text } } = await Tesseract.recognize(canvasCell, 'eng', {
+                    tessedit_char_whitelist: '0123456789',
+                    workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/worker.min.js',
+                    langPath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@4.0.0/lang/',
+                    corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@4.0.0/tesseract-core.wasm.js'
+                  });
+                  let val = parseInt(text.trim()) || 0;
+                  row.push(val);
+                  logMessage(`OCR (${x},${y}): '${text.trim()}' -> ${val}`);
+                } catch (e) {
+                  row.push(0);
+                  logMessage(`OCR エラー (${x},${y}): ${e.message}`);
+                }
                 cell.delete();
               }
               grid.push(row);
@@ -110,7 +135,6 @@
             csvOutput.textContent = "";
             grid.forEach(row => {
               let tr = document.createElement('tr');
-              let csvRow = row.join(',');
               row.forEach(val => {
                 let td = document.createElement('td');
                 td.textContent = val;
@@ -121,8 +145,12 @@
             csvOutput.textContent = grid.map(r => r.join(",")).join("\n");
 
             dst.delete(); M.delete(); srcTri.delete(); dstTri.delete();
+          } else {
+            logMessage("グリッド四角形が検出されません。");
           }
           approx.delete();
+        } else {
+          logMessage("有効な輪郭が見つかりませんでした。");
         }
 
         src.delete(); gray.delete(); thresh.delete(); contours.delete(); hierarchy.delete();
