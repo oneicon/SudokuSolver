@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>数独OCR</title>
+  <script src="https://cdn.jsdelivr.net/npm/@opencv/opencv@4.5.5/opencv.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4"></script>
+  <style>
+    canvas { border: 1px solid #ccc; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <h3>画像から数独グリッドを検出</h3>
+  <input type="file" id="fileInput"><br>
+  <canvas id="canvasOutput" width="500" height="500"></canvas>
+
+  <script>
+    const input = document.getElementById('fileInput');
+    const canvas = document.getElementById('canvasOutput');
+    const ctx = canvas.getContext('2d');
+
+    input.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      const img = new Image();
+      img.onload = () => {
+        canvas.width = img.width;
+        canvas.height = img.height;
+        ctx.drawImage(img, 0, 0);
+
+        // OpenCV.jsで画像処理開始
+        let src = cv.imread(canvas);
+        let gray = new cv.Mat();
+        let thresh = new cv.Mat();
+        let contours = new cv.MatVector();
+        let hierarchy = new cv.Mat();
+
+        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
+        cv.GaussianBlur(gray, gray, new cv.Size(5, 5), 0);
+        cv.adaptiveThreshold(gray, thresh, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C,
+                             cv.THRESH_BINARY_INV, 11, 2);
+        cv.findContours(thresh, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+        let maxArea = 0;
+        let maxContour = null;
+
+        for (let i = 0; i < contours.size(); i++) {
+          let cnt = contours.get(i);
+          let area = cv.contourArea(cnt);
+          if (area > maxArea) {
+            maxArea = area;
+            maxContour = cnt;
+          }
+        }
+
+        if (maxContour) {
+          let peri = cv.arcLength(maxContour, true);
+          let approx = new cv.Mat();
+          cv.approxPolyDP(maxContour, approx, 0.02 * peri, true);
+
+          if (approx.rows === 4) {
+            let pts = [];
+            for (let i = 0; i < 4; i++) {
+              pts.push({ x: approx.data32S[i * 2], y: approx.data32S[i * 2 + 1] });
+            }
+
+            pts = sortPoints(pts); // ← 後述する関数で四隅を正しい順に並べる
+
+            // 射影変換（正方形に補正）
+            let dsize = new cv.Size(450, 450);
+            let srcTri = cv.matFromArray(4, 1, cv.CV_32FC2, [].concat(...pts.map(p => [p.x, p.y])));
+            let dstTri = cv.matFromArray(4, 1, cv.CV_32FC2,
+              [0, 0, 450, 0, 450, 450, 0, 450]);
+            let M = cv.getPerspectiveTransform(srcTri, dstTri);
+            let dst = new cv.Mat();
+            cv.warpPerspective(src, dst, M, dsize);
+
+            cv.imshow('canvasOutput', dst);
+
+            // TODO: dstを9x9マスに分割 → Tesseract.jsで数字読み取り（次ステップ）
+
+            dst.delete(); M.delete(); srcTri.delete(); dstTri.delete();
+          }
+        }
+
+        src.delete(); gray.delete(); thresh.delete(); contours.delete(); hierarchy.delete();
+      };
+      img.src = URL.createObjectURL(file);
+    });
+
+    function sortPoints(pts) {
+      // 左上、右上、右下、左下の順に並べる
+      pts.sort((a, b) => a.y - b.y);
+      const [top1, top2, bottom1, bottom2] = pts.sort((a, b) => a.x - b.x);
+      return [top1, top2, bottom2, bottom1];
+    }
+  </script>
+</body>
+</html>
