@@ -8,6 +8,7 @@
     canvas { border: 1px solid #ccc; margin-top: 10px; }
     td { width: 30px; height: 30px; text-align: center; border: 1px solid #ccc; font-size: 20px; }
     table { border-collapse: collapse; margin-top: 10px; }
+    pre { background: #f8f8f8; border: 1px solid #ccc; padding: 10px; margin-top: 10px; white-space: pre-wrap; }
   </style>
 </head>
 <body>
@@ -16,12 +17,15 @@
   <button id="processButton">‰æ‘œ‚ğˆ—</button>
   <canvas id="canvasOutput" width="500" height="500"></canvas>
   <table id="resultGrid"></table>
+  <h4>CSVo—Í:</h4>
+  <pre id="csvOutput"></pre>
 
   <script>
     const input = document.getElementById('fileInput');
     const canvas = document.getElementById('canvasOutput');
     const ctx = canvas.getContext('2d');
     const resultTable = document.getElementById('resultGrid');
+    const csvOutput = document.getElementById('csvOutput');
     const button = document.getElementById('processButton');
 
     let imageFile = null;
@@ -99,8 +103,10 @@
             }
 
             resultTable.innerHTML = "";
+            csvOutput.textContent = "";
             grid.forEach(row => {
               let tr = document.createElement('tr');
+              let csvRow = row.join(',');
               row.forEach(val => {
                 let td = document.createElement('td');
                 td.textContent = val;
@@ -108,6 +114,7 @@
               });
               resultTable.appendChild(tr);
             });
+            csvOutput.textContent = grid.map(r => r.join(",")).join("\n");
 
             dst.delete(); M.delete(); srcTri.delete(); dstTri.delete();
           }
