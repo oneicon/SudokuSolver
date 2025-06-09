@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>”“ÆOCR</title>
+  <title>æ•°ç‹¬OCR</title>
   <script src="https://cdn.jsdelivr.net/npm/@opencv/opencv@4.5.5/opencv.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4"></script>
   <style>
@@ -13,12 +13,12 @@
   </style>
 </head>
 <body>
-  <h3>‰æ‘œ‚©‚ç”“ÆƒOƒŠƒbƒh‚ğ’Šo</h3>
+  <h3>ç”»åƒã‹ã‚‰æ•°ç‹¬ã‚°ãƒªãƒƒãƒ‰ã‚’æŠ½å‡º</h3>
   <input type="file" id="fileInput"><br>
-  <button id="processButton">‰æ‘œ‚ğˆ—</button>
+  <button id="processButton">ç”»åƒã‚’å‡¦ç†</button>
   <canvas id="canvasOutput" width="500" height="500"></canvas>
   <table id="resultGrid"></table>
-  <h4>CSVo—Í:</h4>
+  <h4>CSVå‡ºåŠ›:</h4>
   <pre id="csvOutput"></pre>
 
   <script>
@@ -94,7 +94,10 @@
                 canvasCell.height = 50;
                 cv.imshow(canvasCell, cell);
                 let { data: { text } } = await Tesseract.recognize(canvasCell, 'eng', {
-                  tessedit_char_whitelist: '0123456789'
+                  tessedit_char_whitelist: '0123456789',
+                  workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/worker.min.js',
+                  langPath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@4.0.0/lang/',
+                  corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@4.0.0/tesseract-core.wasm.js'
                 });
                 let val = parseInt(text.trim()) || 0;
                 row.push(val);
