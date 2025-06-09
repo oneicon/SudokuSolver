@@ -6,27 +6,39 @@
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4"></script>
   <style>
     canvas { border: 1px solid #ccc; margin-top: 10px; }
+    td { width: 30px; height: 30px; text-align: center; border: 1px solid #ccc; font-size: 20px; }
+    table { border-collapse: collapse; margin-top: 10px; }
   </style>
 </head>
 <body>
-  <h3>画像から数独グリッドを検出</h3>
+  <h3>画像から数独グリッドを抽出</h3>
   <input type="file" id="fileInput"><br>
+  <button id="processButton">画像を処理</button>
   <canvas id="canvasOutput" width="500" height="500"></canvas>
+  <table id="resultGrid"></table>
 
   <script>
     const input = document.getElementById('fileInput');
     const canvas = document.getElementById('canvasOutput');
     const ctx = canvas.getContext('2d');
+    const resultTable = document.getElementById('resultGrid');
+    const button = document.getElementById('processButton');
 
-    input.addEventListener('change', async (e) => {
-      const file = e.target.files[0];
+    let imageFile = null;
+
+    input.addEventListener('change', (e) => {
+      imageFile = e.target.files[0];
+    });
+
+    button.addEventListener('click', async () => {
+      if (!imageFile) return;
+
       const img = new Image();
-      img.onload = () => {
+      img.onload = async () => {
         canvas.width = img.width;
         canvas.height = img.height;
         ctx.drawImage(img, 0, 0);
 
-        // OpenCV.jsで画像処理開始
         let src = cv.imread(canvas);
         let gray = new cv.Mat();
         let thresh = new cv.Mat();
@@ -35,13 +47,10 @@
 
         cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
         cv.GaussianBlur(gray, gray, new cv.Size(5, 5), 0);
-        cv.adaptiveThreshold(gray, thresh, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C,
-                             cv.THRESH_BINARY_INV, 11, 2);
+        cv.adaptiveThreshold(gray, thresh, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 11, 2);
         cv.findContours(thresh, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
-        let maxArea = 0;
-        let maxContour = null;
-
+        let maxArea = 0, maxContour = null;
         for (let i = 0; i < contours.size(); i++) {
           let cnt = contours.get(i);
           let area = cv.contourArea(cnt);
@@ -61,36 +70,60 @@
             for (let i = 0; i < 4; i++) {
               pts.push({ x: approx.data32S[i * 2], y: approx.data32S[i * 2 + 1] });
             }
+            pts = sortPoints(pts);
 
-            pts = sortPoints(pts); // ← 後述する関数で四隅を正しい順に並べる
-
-            // 射影変換（正方形に補正）
             let dsize = new cv.Size(450, 450);
             let srcTri = cv.matFromArray(4, 1, cv.CV_32FC2, [].concat(...pts.map(p => [p.x, p.y])));
-            let dstTri = cv.matFromArray(4, 1, cv.CV_32FC2,
-              [0, 0, 450, 0, 450, 450, 0, 450]);
+            let dstTri = cv.matFromArray(4, 1, cv.CV_32FC2, [0, 0, 450, 0, 450, 450, 0, 450]);
             let M = cv.getPerspectiveTransform(srcTri, dstTri);
             let dst = new cv.Mat();
             cv.warpPerspective(src, dst, M, dsize);
 
-            cv.imshow('canvasOutput', dst);
+            let grid = [];
+            for (let y = 0; y < 9; y++) {
+              let row = [];
+              for (let x = 0; x < 9; x++) {
+                let cell = dst.roi(new cv.Rect(x * 50, y * 50, 50, 50));
+                let canvasCell = document.createElement('canvas');
+                canvasCell.width = 50;
+                canvasCell.height = 50;
+                cv.imshow(canvasCell, cell);
+                let { data: { text } } = await Tesseract.recognize(canvasCell, 'eng', {
+                  tessedit_char_whitelist: '0123456789'
+                });
+                let val = parseInt(text.trim()) || 0;
+                row.push(val);
+                cell.delete();
+              }
+              grid.push(row);
+            }
 
-            // TODO: dstを9x9マスに分割 → Tesseract.jsで数字読み取り（次ステップ）
+            resultTable.innerHTML = "";
+            grid.forEach(row => {
+              let tr = document.createElement('tr');
+              row.forEach(val => {
+                let td = document.createElement('td');
+                td.textContent = val;
+                tr.appendChild(td);
+              });
+              resultTable.appendChild(tr);
+            });
 
             dst.delete(); M.delete(); srcTri.delete(); dstTri.delete();
           }
+          approx.delete();
         }
 
         src.delete(); gray.delete(); thresh.delete(); contours.delete(); hierarchy.delete();
       };
-      img.src = URL.createObjectURL(file);
+      img.src = URL.createObjectURL(imageFile);
     });
 
     function sortPoints(pts) {
-      // 左上、右上、右下、左下の順に並べる
       pts.sort((a, b) => a.y - b.y);
-      const [top1, top2, bottom1, bottom2] = pts.sort((a, b) => a.x - b.x);
-      return [top1, top2, bottom2, bottom1];
+      let top = pts.slice(0, 2).sort((a, b) => a.x - b.x);
+      let bottom = pts.slice(2, 4).sort((a, b) => a.x - b.x);
+      return [top[0], top[1], bottom[1], bottom[0]];
     }
   </script>
 </body>
