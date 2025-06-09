@@ -10,7 +10,7 @@
     td { width: 30px; height: 30px; text-align: center; border: 1px solid #ccc; font-size: 20px; }
     table { border-collapse: collapse; margin-top: 10px; }
     pre { background: #f8f8f8; border: 1px solid #ccc; padding: 10px; margin-top: 10px; white-space: pre-wrap; }
-    #log { margin-top: 10px; color: green; font-family: monospace; }
+    #log { margin-top: 10px; color: green; font-family: monospace; white-space: pre-line; }
   </style>
 </head>
 <body>
@@ -18,9 +18,14 @@
   <input type="file" id="fileInput"><br>
   <button id="processButton">画像を処理</button>
   <canvas id="canvasOutput" width="500" height="500"></canvas>
-  <table id="resultGrid"></table>
-  <h4>CSV出力:</h4>
-  <pre id="csvOutput"></pre>
+  <div>
+    <h4>認識結果:</h4>
+    <table id="resultGrid"></table>
+  </div>
+  <div>
+    <h4>CSV出力:</h4>
+    <pre id="csvOutput"></pre>
+  </div>
   <div id="log"></div>
 
   <script>
@@ -114,10 +119,7 @@
 
                 try {
                   let { data: { text } } = await Tesseract.recognize(canvasCell, 'eng', {
-                    tessedit_char_whitelist: '0123456789',
-                    workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/worker.min.js',
-                    langPath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@4.0.0/lang/',
-                    corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@4.0.0/tesseract-core.wasm.js'
+                    tessedit_char_whitelist: '0123456789'
                   });
                   let val = parseInt(text.trim()) || 0;
                   row.push(val);
@@ -131,6 +133,7 @@
               grid.push(row);
             }
 
+            // 表示更新
             resultTable.innerHTML = "";
             csvOutput.textContent = "";
             grid.forEach(row => {
