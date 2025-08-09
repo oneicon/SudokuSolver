@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>9x9 数独読み取り</title>
+<script src="https://docs.opencv.org/4.x/opencv.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<style>
+  video, canvas { max-width: 90%; }
+  #result { white-space: pre; }
+</style>
+</head>
+<body>
+<h2>カメラから9x9の数字を読み取ってCSV化</h2>
+<video id="video" autoplay playsinline></video>
+<br>
+<button id="capture">読み取る</button>
+<canvas id="canvas" style="display:none;"></canvas>
+<pre id="result"></pre>
+
+<script>
+const video = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+  .then(stream => { video.srcObject = stream; });
+
+document.getElementById('capture').addEventListener('click', async () => {
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  ctx.drawImage(video, 0, 0);
+
+  // OpenCVで画像処理
+  let src = cv.imread(canvas);
+  cv.cvtColor(src, src, cv.COLOR_RGBA2GRAY, 0);
+  cv.GaussianBlur(src, src, new cv.Size(5, 5), 0);
+  cv.adaptiveThreshold(src, src, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C,
+                       cv.THRESH_BINARY_INV, 11, 2);
+
+  // ここでは簡易的に9x9等分する（実際は輪郭抽出でグリッド検出すると精度UP）
+  let cellWidth = canvas.width / 9;
+  let cellHeight = canvas.height / 9;
+  let resultMatrix = [];
+
+  for (let y = 0; y < 9; y++) {
+    let row = [];
+    for (let x = 0; x < 9; x++) {
+      let cellCanvas = document.createElement('canvas');
+      cellCanvas.width = cellWidth;
+      cellCanvas.height = cellHeight;
+      let cellCtx = cellCanvas.getContext('2d');
+      cellCtx.drawImage(canvas,
+                        x * cellWidth, y * cellHeight, cellWidth, cellHeight,
+                        0, 0, cellWidth, cellHeight);
+      let { data: { text } } = await Tesseract.recognize(cellCanvas, 'eng', {
+        tessedit_char_whitelist: '123456789'
+      });
+      let num = text.trim() === '' ? 0 : parseInt(text.trim()) || 0;
+      row.push(num);
+    }
+    resultMatrix.push(row);
+  }
+
+  // CSV文字列作成
+  let csv = resultMatrix.map(r => r.join(',')).join('\n');
+  document.getElementById('result').textContent = csv;
+
+  // CSVダウンロード
+  let blob = new Blob([csv], { type: 'text/csv' });
+  let url = URL.createObjectURL(blob);
+  let a = document.createElement('a');
+  a.href = url;
+  a.download = 'sudoku.csv';
+  a.click();
+});
+</script>
+</body>
+</html>
