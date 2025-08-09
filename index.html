@@ -1,172 +1,79 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <title>数独OCR</title>
-  <script src="https://cdn.jsdelivr.net/npm/@opencv/opencv@4.5.5/opencv.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4"></script>
-  <style>
-    canvas { border: 1px solid #ccc; margin-top: 10px; }
-    td { width: 30px; height: 30px; text-align: center; border: 1px solid #ccc; font-size: 20px; }
-    table { border-collapse: collapse; margin-top: 10px; }
-    pre { background: #f8f8f8; border: 1px solid #ccc; padding: 10px; margin-top: 10px; white-space: pre-wrap; }
-    #log { margin-top: 10px; color: green; font-family: monospace; white-space: pre-line; }
-  </style>
+<meta charset="UTF-8">
+<title>9x9 数独読み取り</title>
+<script src="https://docs.opencv.org/4.x/opencv.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<style>
+  video, canvas { max-width: 90%; }
+  #result { white-space: pre; }
+</style>
 </head>
 <body>
-  <h3>画像から数独グリッドを抽出</h3>
-  <input type="file" id="fileInput"><br>
-  <button id="processButton">画像を処理</button>
-  <canvas id="canvasOutput" width="500" height="500"></canvas>
-  <div>
-    <h4>認識結果:</h4>
-    <table id="resultGrid"></table>
-  </div>
-  <div>
-    <h4>CSV出力:</h4>
-    <pre id="csvOutput"></pre>
-  </div>
-  <div id="log"></div>
+<h2>カメラから9x9の数字を読み取ってCSV化</h2>
+<video id="video" autoplay playsinline></video>
+<br>
+<button id="capture">読み取る</button>
+<canvas id="canvas" style="display:none;"></canvas>
+<pre id="result"></pre>
 
-  <script>
-    const input = document.getElementById('fileInput');
-    const canvas = document.getElementById('canvasOutput');
-    const ctx = canvas.getContext('2d');
-    const resultTable = document.getElementById('resultGrid');
-    const csvOutput = document.getElementById('csvOutput');
-    const button = document.getElementById('processButton');
-    const log = document.getElementById('log');
+<script>
+const video = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
 
-    let imageFile = null;
+navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+  .then(stream => { video.srcObject = stream; });
 
-    function logMessage(message) {
-      console.log(message);
-      log.textContent += `\n${message}`;
+document.getElementById('capture').addEventListener('click', async () => {
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  ctx.drawImage(video, 0, 0);
+
+  // OpenCVで画像処理
+  let src = cv.imread(canvas);
+  cv.cvtColor(src, src, cv.COLOR_RGBA2GRAY, 0);
+  cv.GaussianBlur(src, src, new cv.Size(5, 5), 0);
+  cv.adaptiveThreshold(src, src, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C,
+                       cv.THRESH_BINARY_INV, 11, 2);
+
+  // ここでは簡易的に9x9等分する（実際は輪郭抽出でグリッド検出すると精度UP）
+  let cellWidth = canvas.width / 9;
+  let cellHeight = canvas.height / 9;
+  let resultMatrix = [];
+
+  for (let y = 0; y < 9; y++) {
+    let row = [];
+    for (let x = 0; x < 9; x++) {
+      let cellCanvas = document.createElement('canvas');
+      cellCanvas.width = cellWidth;
+      cellCanvas.height = cellHeight;
+      let cellCtx = cellCanvas.getContext('2d');
+      cellCtx.drawImage(canvas,
+                        x * cellWidth, y * cellHeight, cellWidth, cellHeight,
+                        0, 0, cellWidth, cellHeight);
+      let { data: { text } } = await Tesseract.recognize(cellCanvas, 'eng', {
+        tessedit_char_whitelist: '123456789'
+      });
+      let num = text.trim() === '' ? 0 : parseInt(text.trim()) || 0;
+      row.push(num);
     }
+    resultMatrix.push(row);
+  }
 
-    input.addEventListener('change', (e) => {
-      imageFile = e.target.files[0];
-      logMessage(`ファイル読み込み: ${imageFile.name}`);
-    });
+  // CSV文字列作成
+  let csv = resultMatrix.map(r => r.join(',')).join('\n');
+  document.getElementById('result').textContent = csv;
 
-    button.addEventListener('click', async () => {
-      log.textContent = "画像処理を開始します...";
-      if (!imageFile) {
-        logMessage("画像ファイルが未選択です。");
-        return;
-      }
-
-      const img = new Image();
-      img.onload = async () => {
-        canvas.width = img.width;
-        canvas.height = img.height;
-        ctx.drawImage(img, 0, 0);
-        logMessage("画像描画完了。");
-
-        let src = cv.imread(canvas);
-        let gray = new cv.Mat();
-        let thresh = new cv.Mat();
-        let contours = new cv.MatVector();
-        let hierarchy = new cv.Mat();
-
-        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
-        cv.GaussianBlur(gray, gray, new cv.Size(5, 5), 0);
-        cv.adaptiveThreshold(gray, thresh, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 11, 2);
-        logMessage("前処理完了（グレースケール・二値化）。");
-
-        cv.findContours(thresh, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
-        logMessage(`輪郭検出数: ${contours.size()}`);
-
-        let maxArea = 0, maxContour = null;
-        for (let i = 0; i < contours.size(); i++) {
-          let cnt = contours.get(i);
-          let area = cv.contourArea(cnt);
-          if (area > maxArea) {
-            maxArea = area;
-            maxContour = cnt;
-          }
-        }
-
-        if (maxContour) {
-          let peri = cv.arcLength(maxContour, true);
-          let approx = new cv.Mat();
-          cv.approxPolyDP(maxContour, approx, 0.02 * peri, true);
-
-          if (approx.rows === 4) {
-            logMessage("グリッド検出成功。");
-            let pts = [];
-            for (let i = 0; i < 4; i++) {
-              pts.push({ x: approx.data32S[i * 2], y: approx.data32S[i * 2 + 1] });
-            }
-            pts = sortPoints(pts);
-
-            let dsize = new cv.Size(450, 450);
-            let srcTri = cv.matFromArray(4, 1, cv.CV_32FC2, [].concat(...pts.map(p => [p.x, p.y])));
-            let dstTri = cv.matFromArray(4, 1, cv.CV_32FC2, [0, 0, 450, 0, 450, 450, 0, 450]);
-            let M = cv.getPerspectiveTransform(srcTri, dstTri);
-            let dst = new cv.Mat();
-            cv.warpPerspective(src, dst, M, dsize);
-
-            let grid = [];
-            for (let y = 0; y < 9; y++) {
-              let row = [];
-              for (let x = 0; x < 9; x++) {
-                let cell = dst.roi(new cv.Rect(x * 50, y * 50, 50, 50));
-                let canvasCell = document.createElement('canvas');
-                canvasCell.width = 50;
-                canvasCell.height = 50;
-                cv.imshow(canvasCell, cell);
-
-                try {
-                  let { data: { text } } = await Tesseract.recognize(canvasCell, 'eng', {
-                    tessedit_char_whitelist: '0123456789'
-                  });
-                  let val = parseInt(text.trim()) || 0;
-                  row.push(val);
-                  logMessage(`OCR (${x},${y}): '${text.trim()}' -> ${val}`);
-                } catch (e) {
-                  row.push(0);
-                  logMessage(`OCR エラー (${x},${y}): ${e.message}`);
-                }
-                cell.delete();
-              }
-              grid.push(row);
-            }
-
-            // 表示更新
-            resultTable.innerHTML = "";
-            csvOutput.textContent = "";
-            grid.forEach(row => {
-              let tr = document.createElement('tr');
-              row.forEach(val => {
-                let td = document.createElement('td');
-                td.textContent = val;
-                tr.appendChild(td);
-              });
-              resultTable.appendChild(tr);
-            });
-            csvOutput.textContent = grid.map(r => r.join(",")).join("\n");
-
-            dst.delete(); M.delete(); srcTri.delete(); dstTri.delete();
-          } else {
-            logMessage("グリッド四角形が検出されません。");
-          }
-          approx.delete();
-        } else {
-          logMessage("有効な輪郭が見つかりませんでした。");
-        }
-
-        src.delete(); gray.delete(); thresh.delete(); contours.delete(); hierarchy.delete();
-      };
-      img.src = URL.createObjectURL(imageFile);
-    });
-
-    function sortPoints(pts) {
-      pts.sort((a, b) => a.y - b.y);
-      let top = pts.slice(0, 2).sort((a, b) => a.x - b.x);
-      let bottom = pts.slice(2, 4).sort((a, b) => a.x - b.x);
-      return [top[0], top[1], bottom[1], bottom[0]];
-    }
-  </script>
+  // CSVダウンロード
+  let blob = new Blob([csv], { type: 'text/csv' });
+  let url = URL.createObjectURL(blob);
+  let a = document.createElement('a');
+  a.href = url;
+  a.download = 'sudoku.csv';
+  a.click();
+});
+</script>
 </body>
 </html>
