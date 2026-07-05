@@ -1,0 +1,1 @@
+body{margin:0;background:#202020;color:#fff;font-family:sans-serif;text-align:center}#cameraArea{position:relative;display:inline-block;margin-top:20px}video{width:95vw;max-width:600px}#overlay{position:absolute;left:0;top:0;pointer-events:none}button{margin-top:20px;padding:10px 30px;font-size:20px}

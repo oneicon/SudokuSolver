@@ -1,0 +1,1 @@
+import {startCamera} from './camera.js';window.opencvReady=()=>status.textContent='OpenCV読込完了';startButton.onclick=()=>startCamera();
